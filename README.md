@@ -1,0 +1,90 @@
+# content-mcp
+
+MCP server that takes a URL from any supported source and saves a normalized markdown + JSON pair to a local directory. Same verb (`get_content`) whether you're saving a YouTube transcript, a tweet, an arxiv paper, or a blog post.
+
+## Sources
+
+| Source | URLs it matches | What it saves |
+|---|---|---|
+| `youtube` | `youtube.com/*`, `youtu.be/*` | Captions + video metadata. Optional ad-chapter stripping. |
+| `x` | `x.com/*/status/*`, `twitter.com/*/status/*` | Tweet body + thread-parent walk + quoted tweet. Optional local Whisper transcription of attached video. |
+| `paper` | `arxiv.org/abs/*`, `arxiv.org/pdf/*` | Title, authors, abstract, categories, DOI. |
+| `article` | any other `http(s)://` URL | Catch-all Readability extraction (title + body). |
+
+Source is inferred from the URL — no source param on the tools.
+
+## Install / run
+
+```bash
+git clone https://github.com/Chefy3x/content-mcp.git
+cd content-mcp
+npm install
+npm run build
+```
+
+Register with Claude Code (user scope so it works everywhere). Run this from inside the `content-mcp` folder so `$(pwd)` resolves to the right path:
+
+```bash
+claude mcp add content-mcp --scope user -- node "$(pwd)/dist/index.js"
+```
+
+Or skip the commands: paste this repo's URL into Claude Code and tell it "install this MCP for me."
+
+## Environment
+
+| Var | Default | Purpose |
+|---|---|---|
+| `CONTENT_DIR` | `~/Documents/Content` | Where saved content lives. Sharded by source. |
+| `MLX_WHISPER_MODEL` | `mlx-community/whisper-base-mlx` | MLX Whisper model for X video transcription. Upgrade to `whisper-small-mlx` or `whisper-large-v3-mlx` for better accuracy. |
+
+## Storage layout
+
+```
+~/Documents/Content/
+  youtube/youtube_<id>.content.{md,json}
+  x/x_<id>.content.{md,json}
+  paper/paper_<id>.content.{md,json}
+  article/article_<hash>.content.{md,json}
+```
+
+Each `.content.md` has YAML frontmatter (`source`, `id`, `url`, `title`, `fetched_at`, `content_hash`) + a human-readable body. Each `.content.json` has the full `meta` plus extractor-specific `raw` (YouTube transcript entries, X thread chain, etc.).
+
+## Tools
+
+**Universal**
+
+- `get_content(url, refresh?, stripAds?, transcribeVideo?)` — fetch, normalize, save. Returns metadata only (not the body). `refresh: true` forces a re-fetch.
+- `batch_content(urls, refresh?, stripAds?, transcribeVideo?)` — same, across many URLs. Sequential to avoid rate-limit bursts.
+- `get_metadata(url)` — return stored metadata for a URL, or live-fetch metadata only (no body save) if nothing is cached.
+- `list_content(source?)` — list saved items, optionally scoped to one source.
+- `search_content(query, limit?, source?, id?)` — keyword search, ranked (TF + coverage + title bonus). Scope to one source or one saved item.
+- `delete_content(source, id)` — remove both the md and json for a saved item.
+
+**YouTube-only**
+
+- `youtube_get_chapters(url)` — chapter markers (timestamp + title).
+- `youtube_get_transcript_segment(url, startTime, endTime)` — transcript text for a time window. Uses cached entries when available.
+- `youtube_get_channel_videos(url, limit?)` — list recent videos for a channel.
+- `youtube_get_playlist_videos(url, limit?)` — list all videos in a playlist.
+- `youtube_summarize_transcript(url)` — structural sections/WPM overview. Not an LLM summary.
+
+## Source-specific options on `get_content`
+
+- `stripAds: true` (YouTube) — drops transcript entries inside chapters titled sponsor/ad/promo. Ignored on non-YouTube URLs.
+- `transcribeVideo: true` (X) — if the tweet has attached video, pulls it with `yt-dlp`, transcribes locally with MLX Whisper, and folds the transcript into the saved content. Slow (seconds to minutes depending on clip length); first call also downloads the model weights (~140MB for `base`). Ignored on non-X URLs.
+
+## System dependencies
+
+- `node` ≥ 20
+- `yt-dlp` (X video) — `brew install yt-dlp`
+- `ffmpeg` (X video) — `brew install ffmpeg`
+- `mlx_whisper` (X video) — `uv tool install mlx-whisper`
+
+Text extractors (YouTube captions, X text, arxiv, articles) have no external deps beyond npm packages.
+
+## Known limitations
+
+- X text: syndication endpoint returns the target tweet + parent chain only. Downstream replies by other users aren't captured.
+- Paper: arxiv only. DOI / non-arxiv papers (OpenAlex, direct DOIs) not implemented. Full PDF parsing deferred.
+- Article: Readability's `textContent` drops inline images and link markup in favor of clean prose.
+- No per-ID flock or per-source rate limiter yet. Fine for one-at-a-time use; concurrent bursts across sessions could thrash.
