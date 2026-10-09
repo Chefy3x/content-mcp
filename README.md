@@ -88,3 +88,7 @@ Text extractors (YouTube captions, X text, arxiv, articles) have no external dep
 - Paper: arxiv only. DOI / non-arxiv papers (OpenAlex, direct DOIs) not implemented. Full PDF parsing deferred.
 - Article: Readability's `textContent` drops inline images and link markup in favor of clean prose.
 - No per-ID flock or per-source rate limiter yet. Fine for one-at-a-time use; concurrent bursts across sessions could thrash.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

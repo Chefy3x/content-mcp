@@ -2,6 +2,7 @@
   "name": "content-mcp",
   "version": "0.1.0",
   "description": "MCP server for fetching content (YouTube, X, articles, papers) into a normalized local store",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
