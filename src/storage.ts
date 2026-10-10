@@ -104,7 +104,7 @@ export interface ListedEntry {
   mdPath: string;
 }
 
-const SOURCES: Source[] = ["youtube", "x", "paper", "article"];
+const SOURCES: Source[] = ["youtube", "x", "instagram", "tiktok", "paper", "article"];
 
 export async function listContent(source?: Source): Promise<ListedEntry[]> {
   const sources = source ? [source] : SOURCES;

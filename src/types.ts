@@ -1,5 +1,5 @@
 // Add a literal here when a new extractor lands.
-export type Source = "youtube" | "x" | "paper" | "article";
+export type Source = "youtube" | "x" | "instagram" | "tiktok" | "paper" | "article";
 
 export interface ContentMeta {
   source: Source;

@@ -8,6 +8,8 @@ MCP server that takes a URL from any supported source and saves a normalized mar
 |---|---|---|
 | `youtube` | `youtube.com/*`, `youtu.be/*` | Captions + video metadata. Optional ad-chapter stripping. |
 | `x` | `x.com/*/status/*`, `twitter.com/*/status/*` | Tweet body + thread-parent walk + quoted tweet. Optional local Whisper transcription of attached video. |
+| `instagram` | `instagram.com/p/*`, `/reel/*`, `/reels/*`, `/tv/*` | Caption, author, counts + a Whisper transcript of the video. A photo post saves its caption only. |
+| `tiktok` | `tiktok.com/@*/video/*`, `vm.tiktok.com/*`, `tiktok.com/t/*` | Caption, author, counts + a Whisper transcript of the video. |
 | `paper` | `arxiv.org/abs/*`, `arxiv.org/pdf/*` | Title, authors, abstract, categories, DOI. |
 | `article` | any other `http(s)://` URL | Catch-all Readability extraction (title + body). |
 
@@ -35,7 +37,11 @@ Or skip the commands: paste this repo's URL into Claude Code and tell it "instal
 | Var | Default | Purpose |
 |---|---|---|
 | `CONTENT_DIR` | `~/Documents/Content` | Where saved content lives. Sharded by source. |
-| `MLX_WHISPER_MODEL` | `mlx-community/whisper-base-mlx` | MLX Whisper model for X video transcription. Upgrade to `whisper-small-mlx` or `whisper-large-v3-mlx` for better accuracy. |
+| `MLX_WHISPER_MODEL` | `mlx-community/whisper-base-mlx` | MLX Whisper model for video transcription on a Mac. Upgrade to `whisper-small-mlx` or `whisper-large-v3-mlx` for better accuracy. |
+| `WHISPER_BACKEND` | `mlx` on macOS, `ctranslate2` elsewhere | Which Whisper runs. `ctranslate2` is [whisper-ctranslate2](https://github.com/Softcatala/whisper-ctranslate2), the CPU build that works on a Linux server. |
+| `WHISPER_MODEL` | `small` | Model for the `ctranslate2` backend. |
+
+Video transcription (X video, Instagram, TikTok) needs `yt-dlp` and `ffmpeg` on the PATH, plus `mlx_whisper` on a Mac or `whisper-ctranslate2` on Linux.
 
 ## Storage layout
 

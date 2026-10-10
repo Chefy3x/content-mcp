@@ -19,6 +19,14 @@ const ENTRIES: ExtractorEntry[] = [
     load: async () => (await import("./extractors/x.js")).default,
   },
   {
+    source: "instagram",
+    load: async () => (await import("./extractors/instagram.js")).default,
+  },
+  {
+    source: "tiktok",
+    load: async () => (await import("./extractors/tiktok.js")).default,
+  },
+  {
     source: "paper",
     load: async () => (await import("./extractors/paper.js")).default,
   },

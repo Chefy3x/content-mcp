@@ -23,7 +23,7 @@ import {
   type TranscriptEntry,
 } from "./lib/youtube-helpers.js";
 
-const SOURCE_ENUM = z.enum(["youtube", "x", "paper", "article"]);
+const SOURCE_ENUM = z.enum(["youtube", "x", "instagram", "tiktok", "paper", "article"]);
 
 const server = new McpServer({
   name: "content-mcp",
@@ -62,7 +62,7 @@ server.tool(
       .optional()
       .default(false)
       .describe(
-        "X/Twitter only: if the tweet has video, transcribe it locally via yt-dlp + MLX Whisper and fold into content. Slow; fine for one-at-a-time."
+        "X/Twitter only: if the tweet has video, transcribe it locally via yt-dlp + Whisper and fold into content. Slow; fine for one-at-a-time. Instagram and TikTok posts are always transcribed."
       ),
   },
   async ({ url, refresh, stripAds, transcribeVideo }) => {
