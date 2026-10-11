@@ -36,6 +36,15 @@ function run(
   });
 }
 
+// The video exists but carries no sound (a silent screen recording, a GIF).
+// Not a failure: there is simply nothing to transcribe.
+export class NoAudioError extends Error {
+  constructor() {
+    super("the video has no audio track");
+    this.name = "NoAudioError";
+  }
+}
+
 // Two Whisper backends behind one call. MLX is Apple Silicon only, so anywhere
 // else (a Linux server) runs whisper-ctranslate2, the CPU build of
 // faster-whisper, which takes the same audio and writes the same JSON.
@@ -86,19 +95,27 @@ export async function transcribeFromUrl(
   const workDir = await mkdtemp(join(tmpdir(), "content-mcp-"));
   try {
     // yt-dlp: pull best audio, extract to mp3.
-    await run(
-      "yt-dlp",
-      [
-        "-f", "bestaudio/best",
-        "--extract-audio",
-        "--audio-format", "mp3",
-        "--no-playlist",
-        "-o", join(workDir, "audio.%(ext)s"),
-        url,
-      ],
-      signal,
-      workDir
-    );
+    try {
+      await run(
+        "yt-dlp",
+        [
+          "-f", "bestaudio/best",
+          "--extract-audio",
+          "--audio-format", "mp3",
+          "--no-playlist",
+          "-o", join(workDir, "audio.%(ext)s"),
+          url,
+        ],
+        signal,
+        workDir
+      );
+    } catch (err) {
+      // What yt-dlp says when the download has a video stream and no audio stream.
+      if (err instanceof Error && /unable to obtain file audio codec/i.test(err.message)) {
+        throw new NoAudioError();
+      }
+      throw err;
+    }
 
     // Find the extracted audio file.
     const files = await readdir(workDir);

@@ -1,5 +1,5 @@
 import type { Extractor } from "../types.js";
-import { transcribeFromUrl, type TranscribeResult } from "../lib/transcribe.js";
+import { NoAudioError, transcribeFromUrl, type TranscribeResult } from "../lib/transcribe.js";
 
 // Twitter's syndication endpoint is no-auth and powers embeds. Token is a
 // deterministic hash of the tweet ID.
@@ -24,6 +24,11 @@ interface SyndicationTweet {
   favorite_count?: number;
   conversation_count?: number;
   in_reply_to_status_id_str?: string;
+  // Present on a long post ("note tweet"). The syndication endpoint then
+  // returns only the first 280 characters in `text`.
+  note_tweet?: { id?: string };
+  // The whole post, filled in by fetchTweet for a note tweet.
+  note_text?: string;
   parent?: SyndicationTweet;
   quoted_tweet?: SyndicationTweet;
   mediaDetails?: Array<{ type?: string; media_url_https?: string }>;
@@ -49,10 +54,38 @@ async function fetchTweet(id: string, signal: AbortSignal): Promise<SyndicationT
   if (!res.ok) {
     throw new Error(`Twitter syndication returned ${res.status} for id ${id}`);
   }
-  return (await res.json()) as SyndicationTweet;
+  const tweet = (await res.json()) as SyndicationTweet;
+  await fillNote(tweet, signal);
+  if (tweet.quoted_tweet) await fillNote(tweet.quoted_tweet, signal);
+  return tweet;
+}
+
+// A long post comes back cut at 280 characters. FxTwitter's public API serves
+// the whole text with no login, so a note tweet is read from there. If that
+// fails the cut text is kept and marked, never passed off as the full post.
+async function fillNote(tweet: SyndicationTweet, signal: AbortSignal): Promise<void> {
+  if (!tweet.note_tweet || !tweet.id_str) return;
+  try {
+    const res = await fetch(`https://api.fxtwitter.com/status/${encodeURIComponent(tweet.id_str)}`, {
+      signal,
+      headers: { "User-Agent": "content-mcp (+https://github.com/Chefy3x/content-mcp)" },
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { tweet?: { text?: string } };
+    const text = data.tweet?.text?.trim();
+    if (text && text.length > (tweet.text || "").length - 30) tweet.note_text = text;
+  } catch {
+    // Keep the cut text; tweetBody marks it.
+  }
 }
 
 function tweetBody(tweet: SyndicationTweet): string {
+  if (tweet.note_text) return tweet.note_text;
+  if (tweet.note_tweet) return `${cutBody(tweet)}… _[long post, cut off here: the rest could not be read]_`;
+  return cutBody(tweet);
+}
+
+function cutBody(tweet: SyndicationTweet): string {
   const raw = tweet.full_text || tweet.text || "";
   // Crop trailing attached media (e.g. "... Live Now. https://t.co/abc").
   const end = tweet.display_text_range?.[1];
@@ -131,13 +164,23 @@ const x: Extractor<"x"> = {
 
     const hasVideo = (root.mediaDetails ?? []).some((m) => m.type === "video");
     let transcript: TranscribeResult | null = null;
+    let videoNote = "";
     if (transcribeVideo && hasVideo) {
-      transcript = await transcribeFromUrl(url, signal);
-      parts.push(
-        `## Video transcript\n\n_model: ${transcript.model}${
-          transcript.language ? ` · lang: ${transcript.language}` : ""
-        }_\n\n${transcript.text}`
-      );
+      // The post itself is still worth saving when its video cannot be heard.
+      try {
+        transcript = await transcribeFromUrl(url, signal);
+        parts.push(
+          `## Video transcript\n\n_model: ${transcript.model}${
+            transcript.language ? ` · lang: ${transcript.language}` : ""
+          }_\n\n${transcript.text || "_(no speech detected)_"}`
+        );
+      } catch (err) {
+        videoNote =
+          err instanceof NoAudioError
+            ? "The attached video has no audio track, so there is nothing to transcribe."
+            : `Transcript failed: ${oneLine(err instanceof Error ? err.message : String(err)).slice(-300)}`;
+        parts.push(`## Video\n\n_${videoNote}_`);
+      }
     }
 
     const content = parts.join("\n\n---\n\n");
@@ -165,6 +208,9 @@ const x: Extractor<"x"> = {
             url: m.media_url_https,
           })) ?? [],
         has_video: hasVideo,
+        is_long_post: Boolean(root.note_tweet),
+        ...(root.note_tweet && !root.note_text ? { text_truncated: true } : {}),
+        ...(videoNote ? { video_note: videoNote } : {}),
         ...(transcript
           ? {
               video_transcript: {

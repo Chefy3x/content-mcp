@@ -1,5 +1,5 @@
 import type { ExtractorResult } from "../types.js";
-import { transcribeFromUrl, videoInfo, type TranscribeResult, type VideoInfo } from "./transcribe.js";
+import { NoAudioError, transcribeFromUrl, videoInfo, type TranscribeResult, type VideoInfo } from "./transcribe.js";
 
 // Instagram and TikTok posts are the same shape: a caption, some counts, and a
 // short video whose point is usually what is said in it. So both extractors
@@ -67,7 +67,10 @@ export async function fetchShortVideo(
       transcript = await transcribeFromUrl(url, signal);
     } catch (err) {
       // The caption and counts are still worth saving without the speech.
-      transcriptError = oneLine(err instanceof Error ? err.message : String(err)).slice(-300);
+      transcriptError =
+        err instanceof NoAudioError
+          ? "the video has no audio track"
+          : oneLine(err instanceof Error ? err.message : String(err)).slice(-300);
     }
   }
 
