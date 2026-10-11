@@ -9,6 +9,8 @@ import {
   deleteContent,
 } from "./storage.js";
 import type { Source } from "./types.js";
+import { existsSync } from "node:fs";
+import { mediaDir, pruneOldMedia } from "./lib/media.js";
 import {
   extractVideoId,
   extractPlaylistId,
@@ -99,6 +101,10 @@ server.tool(
         mdPath: outcome.mdPath,
         jsonPath: outcome.jsonPath,
         source_specific: outcome.meta.source_specific,
+        // A cached item whose pictures and video have since been deleted.
+        ...(outcome.meta.source_specific.media_files && !existsSync(mediaDir(outcome.meta.source, outcome.meta.id))
+          ? { media_expired: "The saved media was deleted after its keep period. Call again with refresh: true to download it again." }
+          : {}),
       });
     } catch (e) {
       return jsonText({ error: e instanceof Error ? e.message : String(e), url });
@@ -391,6 +397,8 @@ server.tool(
 // ---------------------------------------------------------------------------
 
 async function main() {
+  // Old pictures and video go at startup; the text they belong to stays.
+  await pruneOldMedia().catch(() => 0);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

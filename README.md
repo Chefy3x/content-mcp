@@ -73,6 +73,8 @@ Pictures and video are saved beside the text, one folder per item:
 
 The saved paths are listed under `## Media` in the item's markdown and in `source_specific.media_files`. Pass `downloadMedia: false` for text only. A video over 400 MB is skipped (`CONTENT_MAX_VIDEO_MB` changes the limit). Media needs `yt-dlp` and `ffmpeg` on the PATH.
 
+**Media is deleted after 7 days.** Pictures and video are working material and clips add up, so each item's media folder is removed 7 days after it was saved; the item's text and metadata stay. The clean-up runs when the server starts. Set `CONTENT_MEDIA_DAYS` to change the number of days, or to `0` to keep media forever. Fetching the link again with `refresh: true` downloads it again.
+
 Each `.content.md` has YAML frontmatter (`source`, `id`, `url`, `title`, `fetched_at`, `content_hash`) + a human-readable body. Each `.content.json` has the full `meta` plus extractor-specific `raw` (YouTube transcript entries, X thread chain, etc.).
 
 ## Tools

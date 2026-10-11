@@ -28,6 +28,37 @@ const IMAGE_EXT: Record<string, string> = {
   "image/avif": "avif",
 };
 
+// Pictures and video are kept this many days, then deleted; the text stays.
+// They are working material for reading a post, and clips add up fast.
+// CONTENT_MEDIA_DAYS overrides; 0 keeps them forever.
+const MEDIA_DAYS = process.env.CONTENT_MEDIA_DAYS === undefined ? 7 : Number(process.env.CONTENT_MEDIA_DAYS) || 0;
+const SOURCES: Source[] = ["youtube", "x", "instagram", "tiktok", "paper", "article"];
+
+// Deletes every item's media folder older than MEDIA_DAYS. Only ever touches
+// <CONTENT_DIR>/<source>/media/<source>_*; an item's .md and .json are never removed.
+export async function pruneOldMedia(now = Date.now()): Promise<number> {
+  if (!(MEDIA_DAYS > 0)) return 0;
+  const cutoff = now - MEDIA_DAYS * 24 * 60 * 60 * 1000;
+  let removed = 0;
+  for (const source of SOURCES) {
+    const root = join(getContentDir(), source, "media");
+    const names = await readdir(root).catch(() => [] as string[]);
+    for (const name of names) {
+      if (!name.startsWith(`${source}_`)) continue;
+      const dir = join(root, name);
+      try {
+        const info = await stat(dir);
+        if (!info.isDirectory() || info.mtimeMs > cutoff) continue;
+        await rm(dir, { recursive: true, force: true });
+        removed++;
+      } catch {
+        // Gone already, or not ours to remove.
+      }
+    }
+  }
+  return removed;
+}
+
 export function mediaDir(source: Source, id: string): string {
   return join(getContentDir(), source, "media", `${source}_${id}`);
 }
@@ -164,6 +195,9 @@ export function mediaSection(files: MediaFile[], notes: string[] = []): string {
     "",
     ...files.map((f) => `- ${label[f.kind]}: \`${f.path}\` (${size(f.bytes)})`),
     ...notes.map((n) => `- _${n}_`),
+    ...(files.length && MEDIA_DAYS > 0
+      ? [`- _These files are deleted ${MEDIA_DAYS} days after saving. Fetch the link again with refresh to get them back._`]
+      : []),
   ].join("\n");
 }
 
