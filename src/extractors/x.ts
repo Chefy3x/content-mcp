@@ -1,5 +1,21 @@
 import type { Extractor } from "../types.js";
-import { NoAudioError, transcribeFromUrl, type TranscribeResult } from "../lib/transcribe.js";
+import {
+  NoAudioError,
+  transcribeFromFile,
+  transcribeFromUrl,
+  type TranscribeResult,
+} from "../lib/transcribe.js";
+import {
+  mediaSection,
+  mediaSummary,
+  probeVideo,
+  pruneMediaDir,
+  resetMediaDir,
+  saveFrames,
+  saveImage,
+  saveVideo,
+  type MediaFile,
+} from "../lib/media.js";
 
 // Twitter's syndication endpoint is no-auth and powers embeds. Token is a
 // deterministic hash of the tweet ID.
@@ -162,13 +178,47 @@ const x: Extractor<"x"> = {
       parts.push(formatTweet(root.quoted_tweet, "Quoted"));
     }
 
-    const hasVideo = (root.mediaDetails ?? []).some((m) => m.type === "video");
+    const hasVideo = (root.mediaDetails ?? []).some((m) => m.type === "video" || m.type === "animated_gif");
+
+    // The post's pictures and its video, saved beside the text. A post that is
+    // one line and a screenshot is otherwise saved without its point.
+    const media: MediaFile[] = [];
+    const mediaNotes: string[] = [];
+    let video: MediaFile | undefined;
+    let hasAudio = true;
+    if (options?.downloadMedia !== false) {
+      const dir = await resetMediaDir("x", rootId);
+      const photos = [root, ...(root.quoted_tweet ? [root.quoted_tweet] : [])].flatMap((t) =>
+        (t.mediaDetails ?? []).filter((m) => m.type === "photo" && m.media_url_https).map((m) => m.media_url_https!)
+      );
+      for (const [i, photo] of photos.entries()) {
+        const image = await saveImage(`${photo}?name=large`, dir, `image_${i + 1}`, signal);
+        if (image) media.push(image);
+      }
+      if (hasVideo) {
+        const saved = await saveVideo(url, dir, signal);
+        video = saved.file;
+        if (saved.error) mediaNotes.push(`Video not saved: ${saved.error}`);
+        if (video) {
+          media.push(video);
+          const probe = await probeVideo(video.path, signal).catch(() => ({ duration: 0, hasAudio: true }));
+          hasAudio = probe.hasAudio;
+          media.push(...(await saveFrames(video.path, dir, probe.duration, signal)));
+        }
+      }
+      await pruneMediaDir(dir);
+    }
+
     let transcript: TranscribeResult | null = null;
     let videoNote = "";
-    if (transcribeVideo && hasVideo) {
+    // A video already on disk is transcribed as a matter of course; without
+    // one it stays opt-in, because it means a download of its own.
+    if (hasVideo && (video ? options?.transcribeVideo !== false : transcribeVideo)) {
       // The post itself is still worth saving when its video cannot be heard.
       try {
-        transcript = await transcribeFromUrl(url, signal);
+        transcript = video
+          ? await transcribeFromFile(video.path, hasAudio, signal)
+          : await transcribeFromUrl(url, signal);
         parts.push(
           `## Video transcript\n\n_model: ${transcript.model}${
             transcript.language ? ` · lang: ${transcript.language}` : ""
@@ -182,6 +232,9 @@ const x: Extractor<"x"> = {
         parts.push(`## Video\n\n_${videoNote}_`);
       }
     }
+
+    const listed = mediaSection(media, mediaNotes);
+    if (listed) parts.push(listed);
 
     const content = parts.join("\n\n---\n\n");
     const author = root.user?.screen_name || "unknown";
@@ -208,6 +261,7 @@ const x: Extractor<"x"> = {
             url: m.media_url_https,
           })) ?? [],
         has_video: hasVideo,
+        ...mediaSummary(media),
         is_long_post: Boolean(root.note_tweet),
         ...(root.note_tweet && !root.note_text ? { text_truncated: true } : {}),
         ...(videoNote ? { video_note: videoNote } : {}),

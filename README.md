@@ -53,13 +53,33 @@ Video transcription (X video, Instagram, TikTok) needs `yt-dlp` and `ffmpeg` on 
   article/article_<hash>.content.{md,json}
 ```
 
+Pictures and video are saved beside the text, one folder per item:
+
+```
+~/Documents/Content/
+  x/media/x_<id>/image_1.jpg, video.mp4, frame_1.jpg …
+  instagram/media/instagram_<id>/video.mp4, frame_1.jpg …, cover.jpg
+  tiktok/media/tiktok_<id>/video.mp4, frame_1.jpg …, cover.jpg
+  youtube/media/youtube_<id>/thumbnail.jpg
+  article/media/article_<hash>/image_1.png …
+```
+
+| Source | What is saved |
+|---|---|
+| `x` | Every image on the post and its quoted post; the video (mp4, up to 1080p) with four stills. A saved video with sound is transcribed. |
+| `instagram`, `tiktok` | The clip, four stills from it and its cover image. A photo post saves its first picture; the rest of a carousel needs a login. |
+| `youtube` | The thumbnail. The video only with `downloadVideo: true`. |
+| `article` | The lead image and up to eight figures from the body. |
+
+The saved paths are listed under `## Media` in the item's markdown and in `source_specific.media_files`. Pass `downloadMedia: false` for text only. A video over 400 MB is skipped (`CONTENT_MAX_VIDEO_MB` changes the limit). Media needs `yt-dlp` and `ffmpeg` on the PATH.
+
 Each `.content.md` has YAML frontmatter (`source`, `id`, `url`, `title`, `fetched_at`, `content_hash`) + a human-readable body. Each `.content.json` has the full `meta` plus extractor-specific `raw` (YouTube transcript entries, X thread chain, etc.).
 
 ## Tools
 
 **Universal**
 
-- `get_content(url, refresh?, stripAds?, transcribeVideo?)` — fetch, normalize, save. Returns metadata only (not the body). `refresh: true` forces a re-fetch.
+- `get_content(url, refresh?, stripAds?, transcribeVideo?, downloadMedia?, downloadVideo?)` — fetch, normalize, save. Returns metadata only (not the body). `refresh: true` forces a re-fetch.
 - `batch_content(urls, refresh?, stripAds?, transcribeVideo?)` — same, across many URLs. Sequential to avoid rate-limit bursts.
 - `get_metadata(url)` — return stored metadata for a URL, or live-fetch metadata only (no body save) if nothing is cached.
 - `list_content(source?)` — list saved items, optionally scoped to one source.

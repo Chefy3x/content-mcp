@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, mkdir, stat, unlink, rename } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir, stat, unlink, rename, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -89,6 +89,8 @@ export async function deleteContent(
   let jsonDeleted = false;
   try { await unlink(md); mdDeleted = true; } catch {}
   try { await unlink(json); jsonDeleted = true; } catch {}
+  // Its pictures and video go with it (see lib/media.ts for the layout).
+  await rm(join(sourceDir(source), "media", slug(source, id)), { recursive: true, force: true }).catch(() => {});
   return { mdDeleted, jsonDeleted };
 }
 

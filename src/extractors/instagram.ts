@@ -30,7 +30,7 @@ async function previewCaption(url: string, signal: AbortSignal) {
   if (!description && !title) return null;
   // og:title reads `Name on Instagram: "caption"`.
   const author = title.match(/^(.*?) on Instagram/)?.[1];
-  return { author, caption: description || title };
+  return { author, caption: description || title, image: decode(tag("image") || "") || undefined };
 }
 
 const instagram: Extractor<"instagram"> = {
@@ -47,7 +47,12 @@ const instagram: Extractor<"instagram"> = {
   },
 
   fetch(url: string, signal: AbortSignal, options?: Record<string, unknown>) {
-    return fetchShortVideo(url, signal, options, { platform: "Instagram", fallback: previewCaption });
+    return fetchShortVideo(url, signal, options, {
+      platform: "Instagram",
+      source: "instagram",
+      id: this.extractId(url),
+      fallback: previewCaption,
+    });
   },
 };
 

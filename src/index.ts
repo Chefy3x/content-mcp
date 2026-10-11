@@ -62,14 +62,28 @@ server.tool(
       .optional()
       .default(false)
       .describe(
-        "X/Twitter only: if the tweet has video, transcribe it locally via yt-dlp + Whisper and fold into content. Slow; fine for one-at-a-time. Instagram and TikTok posts are always transcribed."
+        "X/Twitter only, and only when downloadMedia is false: transcribe the tweet's video via yt-dlp + Whisper. With media on (the default), any saved video that has sound is transcribed anyway, as Instagram and TikTok posts always are."
       ),
+    downloadMedia: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe(
+        "Save the item's pictures and video beside its text: an X post's images and video, an Instagram or TikTok clip with a few stills from it, a YouTube thumbnail, an article's lead image and figures. Their local paths are listed under '## Media' in the saved markdown and in source_specific.media_files. Set false for text only."
+      ),
+    downloadVideo: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("YouTube only: also download the video itself (up to 1080p). Off by default because YouTube videos are long."),
   },
-  async ({ url, refresh, stripAds, transcribeVideo }) => {
+  async ({ url, refresh, stripAds, transcribeVideo, downloadMedia, downloadVideo }) => {
     try {
       const sourceOptions: Record<string, unknown> = {};
       if (stripAds) sourceOptions.stripAds = true;
       if (transcribeVideo) sourceOptions.transcribeVideo = true;
+      if (downloadMedia === false) sourceOptions.downloadMedia = false;
+      if (downloadVideo) sourceOptions.downloadVideo = true;
       const outcome = await fetchAndSave(url, {
         refresh,
         sourceOptions: Object.keys(sourceOptions).length ? sourceOptions : undefined,
@@ -107,12 +121,18 @@ server.tool(
       .boolean()
       .optional()
       .default(false)
-      .describe("X/Twitter only: transcribe tweet video via MLX Whisper"),
+      .describe("X/Twitter only, when downloadMedia is false: transcribe tweet video via Whisper"),
+    downloadMedia: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe("Save each item's pictures and video beside its text (see get_content). Set false for text only."),
   },
-  async ({ urls, refresh, stripAds, transcribeVideo }) => {
+  async ({ urls, refresh, stripAds, transcribeVideo, downloadMedia }) => {
     const sourceOptions: Record<string, unknown> = {};
     if (stripAds) sourceOptions.stripAds = true;
     if (transcribeVideo) sourceOptions.transcribeVideo = true;
+    if (downloadMedia === false) sourceOptions.downloadMedia = false;
     const opts = Object.keys(sourceOptions).length ? sourceOptions : undefined;
     const results: Array<Record<string, unknown>> = [];
     for (const url of urls) {

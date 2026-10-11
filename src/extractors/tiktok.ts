@@ -32,7 +32,12 @@ const tiktok: Extractor<"tiktok"> = {
   },
 
   fetch(url: string, signal: AbortSignal, options?: Record<string, unknown>) {
-    return fetchShortVideo(url, signal, options, { platform: "TikTok", fallback: oembedCaption });
+    return fetchShortVideo(url, signal, options, {
+      platform: "TikTok",
+      source: "tiktok",
+      id: this.extractId(url),
+      fallback: oembedCaption,
+    });
   },
 };
 

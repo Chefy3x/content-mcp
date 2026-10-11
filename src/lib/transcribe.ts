@@ -10,7 +10,7 @@ export interface TranscribeResult {
   language?: string;
 }
 
-function run(
+export function run(
   cmd: string,
   args: string[],
   signal: AbortSignal,
@@ -123,24 +123,49 @@ export async function transcribeFromUrl(
     if (!audio) throw new Error("yt-dlp did not produce an audio file");
     const audioPath = join(workDir, audio);
 
-    const model = await whisper(audioPath, workDir, signal);
+    return await transcribeAudio(audioPath, workDir, signal);
+  } finally {
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
 
-    // Both backends write <basename>.json in the output dir.
-    const base = audio.replace(/\.[^.]+$/, "");
-    const jsonPath = join(workDir, `${base}.json`);
-    const raw = await readFile(jsonPath, "utf-8");
-    const parsed = JSON.parse(raw) as {
-      text?: string;
-      segments?: Array<{ start: number; end: number; text: string }>;
-      language?: string;
-    };
+async function transcribeAudio(
+  audioPath: string,
+  workDir: string,
+  signal: AbortSignal
+): Promise<TranscribeResult> {
+  const model = await whisper(audioPath, workDir, signal);
 
-    return {
-      text: (parsed.text || "").trim(),
-      segments: (parsed.segments || []).map((s) => ({ start: s.start, end: s.end, text: s.text })),
-      model,
-      language: parsed.language,
-    };
+  // Both backends write <basename>.json in the output dir.
+  const base = audioPath.split("/").pop()!.replace(/\.[^.]+$/, "");
+  const raw = await readFile(join(workDir, `${base}.json`), "utf-8");
+  const parsed = JSON.parse(raw) as {
+    text?: string;
+    segments?: Array<{ start: number; end: number; text: string }>;
+    language?: string;
+  };
+
+  return {
+    text: (parsed.text || "").trim(),
+    segments: (parsed.segments || []).map((s) => ({ start: s.start, end: s.end, text: s.text })),
+    model,
+    language: parsed.language,
+  };
+}
+
+// The same transcript from a video already on disk, so a clip that was
+// downloaded to keep is not downloaded a second time to be heard.
+export async function transcribeFromFile(
+  videoPath: string,
+  hasAudio: boolean,
+  signal: AbortSignal
+): Promise<TranscribeResult> {
+  if (!hasAudio) throw new NoAudioError();
+  const workDir = await mkdtemp(join(tmpdir(), "content-mcp-"));
+  try {
+    const audioPath = join(workDir, "audio.mp3");
+    await run("ffmpeg", ["-v", "error", "-y", "-i", videoPath, "-vn", "-ac", "1", "-ar", "16000", audioPath], signal);
+    return await transcribeAudio(audioPath, workDir, signal);
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -160,6 +185,7 @@ export interface VideoInfo {
   repost_count?: number;
   timestamp?: number;
   webpage_url?: string;
+  thumbnail?: string;
 }
 
 // What yt-dlp knows about a post without downloading it: who, when, the

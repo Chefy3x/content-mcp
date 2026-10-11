@@ -1,5 +1,24 @@
 import type { ExtractorResult } from "../types.js";
-import { NoAudioError, transcribeFromUrl, videoInfo, type TranscribeResult, type VideoInfo } from "./transcribe.js";
+import type { Source } from "../types.js";
+import {
+  NoAudioError,
+  transcribeFromFile,
+  transcribeFromUrl,
+  videoInfo,
+  type TranscribeResult,
+  type VideoInfo,
+} from "./transcribe.js";
+import {
+  mediaSection,
+  mediaSummary,
+  probeVideo,
+  pruneMediaDir,
+  resetMediaDir,
+  saveFrames,
+  saveImage,
+  saveVideo,
+  type MediaFile,
+} from "./media.js";
 
 // Instagram and TikTok posts are the same shape: a caption, some counts, and a
 // short video whose point is usually what is said in it. So both extractors
@@ -18,16 +37,25 @@ function count(n: number | undefined): string | null {
 
 export interface ShortVideoOptions {
   platform: "Instagram" | "TikTok";
+  source: Source;
+  id: string;
   // Used when yt-dlp cannot read the post (a photo post, a login wall).
-  fallback?: (url: string, signal: AbortSignal) => Promise<{ author?: string; caption: string } | null>;
+  fallback?: (
+    url: string,
+    signal: AbortSignal
+  ) => Promise<{ author?: string; caption: string; image?: string } | null>;
 }
 
 export async function fetchShortVideo(
   url: string,
   signal: AbortSignal,
   options: Record<string, unknown> | undefined,
-  { platform, fallback }: ShortVideoOptions
+  { platform, source, id, fallback }: ShortVideoOptions
 ): Promise<ExtractorResult> {
+  const wantMedia = options?.downloadMedia !== false;
+  const dir = wantMedia ? await resetMediaDir(source, id) : "";
+  const media: MediaFile[] = [];
+  const mediaNotes: string[] = [];
   let info: VideoInfo | null = null;
   let infoError = "";
   try {
@@ -42,10 +70,23 @@ export async function fetchShortVideo(
       throw new Error(`${platform} post could not be read: ${oneLine(infoError).slice(-300)}`);
     }
     const author = basic.author || "unknown";
+    if (dir) {
+      // A photo post: the preview image is the one picture reachable without a login.
+      const image = basic.image ? await saveImage(basic.image, dir, "image_1", signal) : null;
+      if (image) media.push(image);
+      await pruneMediaDir(dir);
+    }
     return {
       title: `${author}: ${oneLine(basic.caption).slice(0, 80)}`,
-      content: `> **${platform} post** — ${author}\n\n${basic.caption}\n\n_No video could be read for this post, so there is no transcript._`,
-      source_specific: { platform, author, has_video: false, caption_only: true },
+      content: [
+        `> **${platform} post** — ${author}`,
+        basic.caption,
+        "_No video could be read for this post, so there is no transcript._",
+        mediaSection(media, media.length ? ["A carousel's other pictures need a login and are not saved."] : []),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      source_specific: { platform, author, has_video: false, caption_only: true, ...mediaSummary(media) },
       raw: { fallback: basic, yt_dlp_error: oneLine(infoError).slice(-500) },
     };
   }
@@ -60,11 +101,31 @@ export async function fetchShortVideo(
     ["shares", count(info.repost_count)],
   ].filter(([, v]) => v) as Array<[string, string]>;
 
+  // The clip itself, a few stills from it, and its cover image.
+  let video: MediaFile | undefined;
+  let hasAudio = true;
+  if (dir) {
+    const saved = await saveVideo(url, dir, signal);
+    video = saved.file;
+    if (saved.error) mediaNotes.push(`Video not saved: ${saved.error}`);
+    if (video) {
+      media.push(video);
+      const probe = await probeVideo(video.path, signal).catch(() => ({ duration: info.duration ?? 0, hasAudio: true }));
+      hasAudio = probe.hasAudio;
+      media.push(...(await saveFrames(video.path, dir, probe.duration || info.duration || 0, signal)));
+    }
+    const cover = info.thumbnail ? await saveImage(info.thumbnail, dir, "cover", signal) : null;
+    if (cover) media.push(cover);
+    await pruneMediaDir(dir);
+  }
+
   let transcript: TranscribeResult | null = null;
   let transcriptError = "";
   if (options?.transcribeVideo !== false) {
     try {
-      transcript = await transcribeFromUrl(url, signal);
+      transcript = video
+        ? await transcribeFromFile(video.path, hasAudio, signal)
+        : await transcribeFromUrl(url, signal);
     } catch (err) {
       // The caption and counts are still worth saving without the speech.
       transcriptError =
@@ -87,6 +148,7 @@ export async function fetchShortVideo(
       : transcriptError
         ? `_Transcript failed: ${transcriptError}_`
         : "",
+    mediaSection(media, mediaNotes),
   ].filter(Boolean);
 
   const titleBody = oneLine(caption);
@@ -104,6 +166,7 @@ export async function fetchShortVideo(
       comment_count: info.comment_count,
       share_count: info.repost_count,
       has_video: true,
+      ...mediaSummary(media),
       ...(transcript
         ? {
             video_transcript: {
